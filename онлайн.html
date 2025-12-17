@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bachoi 17 maktab</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; margin: 0; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
+        #ui-top { text-align: center; margin-top: 20px; z-index: 10; width: 100%; }
+        #score-container { font-size: 3.5rem; font-weight: 900; color: #2c3e50; line-height: 1; }
+        #power-info { font-size: 1rem; color: #7f8c8d; margin-top: 5px; font-weight: bold; }
+        #user-info { margin-top: 10px; font-size: 0.9rem; color: #3498db; cursor: pointer; text-decoration: underline; }
+
+        #game-area { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
+        #click-btn { width: 220px; height: 220px; border-radius: 50%; border: 8px solid white; box-shadow: 0 15px 35px rgba(0,0,0,0.1); cursor: pointer; object-fit: cover; transition: transform 0.05s; }
+        
+        @keyframes shake { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 50% { transform: rotate(-5deg); } 75% { transform: rotate(3deg); } 100% { transform: rotate(0deg); } }
+        .shake-anim { animation: shake 0.1s; }
+
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+        .modal-content { background: white; width: 90%; max-width: 400px; border-radius: 25px; padding: 20px; position: relative; max-height: 75vh; display: flex; flex-direction: column; }
+        .close-btn { position: absolute; top: 15px; right: 20px; font-size: 1.8rem; cursor: pointer; color: #ccc; }
+        
+        /* Стили чата с кнопкой удаления */
+        #chat-messages { flex: 1; overflow-y: auto; margin: 10px 0; font-size: 0.9rem; display: flex; flex-direction: column; gap: 8px; }
+        .chat-row { padding: 8px 12px; background: #f1f3f5; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; animation: fadeIn 0.3s; }
+        .chat-text { flex: 1; margin-right: 10px; word-break: break-word; }
+        .del-msg-btn { background: #ff7675; color: white; border: none; border-radius: 6px; cursor: pointer; padding: 2px 6px; font-size: 0.7rem; opacity: 0.7; transition: 0.2s; }
+        .del-msg-btn:hover { opacity: 1; background: #d63031; }
+
+        .chat-ctrl { display: flex; gap: 5px; }
+        #chat-input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 10px; outline: none; }
+        #send-btn { background: #3498db; border: none; color: white; border-radius: 10px; padding: 0 15px; cursor: pointer; }
+        
+        .player-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        nav { position: fixed; bottom: 0; width: 100%; height: 75px; background: white; display: flex; border-top: 1px solid #eee; z-index: 50; }
+        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; color: #adb5bd; cursor: pointer; }
+        .active { color: #3498db; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="ui-top">
+        <div id="score-container"><span id="coins">0</span>💵</div>
+        <div id="power-info">Сила: <span id="current-power">1</span></div>
+        <div id="user-info" onclick="changeName()">Ник: <span id="display-name">...</span> (изменить)</div>
+    </div>
+
+    <div id="game-area">
+        <img id="click-btn" src="gerb.png" alt="Pet">
+    </div>
+
+    <div id="modal-top" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModals()">×</span>
+            <h2>🏆 ТОП ИГРОКОВ</h2>
+            <div id="lb-content">Загрузка...</div>
+        </div>
+    </div>
+
+    <div id="modal-chat" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModals()">×</span>
+            <h2>💬 ЧАТ</h2>
+            <div id="chat-messages"></div>
+            <div class="chat-ctrl">
+                <input type="text" id="chat-input" placeholder="Напиши что-нибудь...">
+                <button id="send-btn">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <nav>
+        <div class="nav-item active" onclick="closeModals()">🏠<br>ГЛАВНАЯ</div>
+        <div class="nav-item" onclick="openModal('modal-top')">🏆<br>ТОП</div>
+        <div class="nav-item" onclick="openModal('modal-chat')">💬<br>ЧАТ</div>
+        <div class="nav-item" onclick="buyBoost()" style="color: #f39c12;">⚡<br><b id="boost-label">100</b></div>
+    </nav>
+
+    <script>
+        const DB_URL = "https://clikercomee-default-rtdb.firebaseio.com"; 
+
+        let userName = localStorage.getItem('p_name') || prompt("Твой ник:") || "User" + Math.floor(Math.random()*100);
+        localStorage.setItem('p_name', userName);
+
+        let count = parseInt(localStorage.getItem('p_coins')) || 0;
+        let power = parseInt(localStorage.getItem('p_power')) || 1;
+
+        function updateUI() {
+            document.getElementById('coins').innerText = count.toLocaleString();
+            document.getElementById('current-power').innerText = power;
+            document.getElementById('display-name').innerText = userName;
+            let cost = Math.pow(2, power - 1) * 100;
+            document.getElementById('boost-label').innerText = cost;
+        }
+        updateUI();
+
+        function changeName() {
+            let newName = prompt("Введите новый ник:", userName);
+            if (newName && newName.trim() !== "" && newName !== userName) {
+                userName = newName.trim();
+                localStorage.setItem('p_name', userName);
+                updateUI();
+                sync();
+            }
+        }
+
+        function openModal(id) {
+            closeModals();
+            document.getElementById(id).style.display = 'flex';
+            if(id === 'modal-top') loadLB();
+            if(id === 'modal-chat') loadChat();
+        }
+        function closeModals() {
+            document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+        }
+
+        async function sync() {
+            fetch(`${DB_URL}/players/${userName}.json`, { method: 'PUT', body: JSON.stringify({ score: count, power: power }) });
+        }
+
+        document.getElementById('click-btn').onclick = () => {
+            count += power;
+            updateUI();
+            const btn = document.getElementById('click-btn');
+            btn.classList.remove('shake-anim');
+            void btn.offsetWidth;
+            btn.classList.add('shake-anim');
+            localStorage.setItem('p_coins', count);
+            sync();
+        };
+
+        function buyBoost() {
+            let cost = Math.pow(2, power - 1) * 100;
+            if (count >= cost) {
+                count -= cost; power++;
+                updateUI();
+                localStorage.setItem('p_power', power);
+                localStorage.setItem('p_coins', count);
+                sync();
+                sendMessage("🚀 Я прокачал силу клика!");
+            } else { alert("Нужно " + cost + " монет!"); }
+        }
+
+        // --- ЛОГИКА ЧАТА ---
+        async function sendMessage(t) {
+            const inp = document.getElementById('chat-input');
+            const msg = t || inp.value;
+            if(!msg) return;
+            await fetch(`${DB_URL}/chat.json`, { method: 'POST', body: JSON.stringify({user:userName, text:msg, time:Date.now()}) });
+            inp.value = '';
+            loadChat();
+        }
+        document.getElementById('send-btn').onclick = () => sendMessage();
+
+        // УДАЛЕНИЕ СООБЩЕНИЯ
+        async function deleteMessage(msgId) {
+            if(confirm("Удалить это сообщение для всех?")) {
+                await fetch(`${DB_URL}/chat/${msgId}.json`, { method: 'DELETE' });
+                loadChat();
+            }
+        }
+
+        async function loadChat() {
+            const res = await fetch(`${DB_URL}/chat.json`);
+            const data = await res.json();
+            const box = document.getElementById('chat-messages');
+            if(!data) { box.innerHTML = "Сообщений нет"; return; }
+            box.innerHTML = '';
+            
+            // В Firebase ключи (msgId) важны для удаления
+            Object.keys(data).forEach(id => {
+                const m = data[id];
+                const row = document.createElement('div');
+                row.className = 'chat-row';
+                row.innerHTML = `
+                    <div class="chat-text"><b>${m.user}:</b> ${m.text}</div>
+                    <button class="del-msg-btn" onclick="deleteMessage('${id}')">❌</button>
+                `;
+                box.appendChild(row);
+            });
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function loadLB() {
+            const res = await fetch(`${DB_URL}/players.json`);
+            const data = await res.json();
+            const box = document.getElementById('lb-content');
+            if(!data) return;
+            const sorted = Object.entries(data).sort((a,b)=>b[1].score-a[1].score).slice(0,10);
+            box.innerHTML = sorted.map((p,i)=>`<div class="player-row" style="${p[0] === userName ? 'color:blue; font-weight:bold;' : ''}"><span>${i+1}. ${p[0]}</span><b>${p[1].score}</b></div>`).join('');
+        }
+
+        setInterval(() => {
+            if(document.getElementById('modal-chat').style.display === 'flex') loadChat();
+            if(document.getElementById('modal-top').style.display === 'flex') loadLB();
+        }, 5000);
+    </script>
+</body>
+</html>
